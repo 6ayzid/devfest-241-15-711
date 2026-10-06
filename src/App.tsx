@@ -1,4 +1,4 @@
-import { useReducer, useEffect, useRef } from 'react';
+import { useReducer, useEffect, useRef, useState } from 'react';
 import type {
   RequirementsData,
   UploadedFileRecord,
@@ -28,12 +28,15 @@ import { FilePool } from './ui/FilePool';
 import { ChecklistTable } from './ui/ChecklistTable';
 import { ErrorBoundary } from './ui/ErrorBoundary';
 import { Button } from './ui/Button';
+import { AiSettingsSheet } from './ui/AiSettingsSheet';
+import { useAiSettings } from './ui/hooks/useAiSettings';
 import {
   UploadIcon,
   FileSpreadsheetIcon,
   RefreshIcon,
   WandIcon,
   FilePdfIcon,
+  SparkleIcon,
 } from './ui/icons';
 
 interface AppState {
@@ -426,6 +429,10 @@ export default function App() {
   const [state, dispatch] = useReducer(appReducer, null, computeInitialState);
   const requirementsFileInputRef = useRef<HTMLInputElement>(null);
 
+  // Optional AI (React state only; never part of the localStorage session)
+  const ai = useAiSettings();
+  const [aiSheetOpen, setAiSheetOpen] = useState(false);
+
   // Sync theme with DOM
   useEffect(() => {
     if (state.theme === 'system') {
@@ -665,6 +672,14 @@ export default function App() {
               >
                 {t('btn_reset_demo', state.language)}
               </Button>
+              <Button
+                variant="secondary"
+                size="s"
+                icon={<SparkleIcon size={16} />}
+                onClick={() => setAiSheetOpen(true)}
+              >
+                {t('ai_settings_btn', state.language)}
+              </Button>
             </>
           }
         />
@@ -749,7 +764,7 @@ export default function App() {
             </label>
 
             {/* Mobile Actions in main flow */}
-            <div className="flex sm:hidden items-center gap-2">
+            <div className="flex sm:hidden flex-wrap items-center gap-2">
               <Button
                 variant="outlined"
                 size="s"
@@ -765,6 +780,14 @@ export default function App() {
                 onClick={() => dispatch({ type: 'RESET_DATA' })}
               >
                 Reset
+              </Button>
+              <Button
+                variant="secondary"
+                size="s"
+                icon={<SparkleIcon size={16} />}
+                onClick={() => setAiSheetOpen(true)}
+              >
+                {t('ai_settings_btn', state.language)}
               </Button>
             </div>
           </section>
@@ -803,6 +826,15 @@ export default function App() {
 
         {/* MOBILE BOTTOM DOCK (< 640px) */}
         <BottomDock actions={dockActions} lang={state.language} />
+
+        {/* OPTIONAL AI SETTINGS (drawer / bottom sheet) */}
+        <AiSettingsSheet
+          open={aiSheetOpen}
+          onClose={() => setAiSheetOpen(false)}
+          lang={state.language}
+          ai={ai}
+          consentHighlight={false}
+        />
       </div>
     </ErrorBoundary>
   );

@@ -8,31 +8,41 @@
 
 ---
 
-## 5-Line Architecture Summary
-- **Pure Logic Isolation (`src/logic/*`)**: 100% testable, zero-DOM TypeScript modules for validation, file parsing, deduplication, status evaluation, and PDF synthesis.
-- **Presentation (`src/ui/*`)**: React 19 + Tailwind CSS v4 driven strictly by Material 3 Expressive tonal color roles and spring physics.
-- **In-Browser PDF Engine**: Powered by `pdf-lib` without external servers, workers, or cloud dependencies.
-- **Zero-Throw Boundary**: Defensive JSON and PDF magic-byte (`%PDF-`) verification returning typed error unions.
-- **Predictable State Flow**: Single `useReducer` managing synchronous Result Morphs, animated Delta Chips, and versioned `localStorage` under `app:v1:`.
+## Architecture & Core Philosophy
+- **Pure Logic Isolation (`src/logic/*`)**: 100% testable, zero-DOM TypeScript modules for validation, file parsing, deduplication, status evaluation, and PDF synthesis. UI rewrites never touch core algorithms.
+- **Client-Side Execution & Zero Secret Leaks**: 100% static client-side application. No backend servers, remote databases, or hardcoded secrets. All state persists safely in `localStorage` under `app:v1:`.
+- **Defensive In-Browser PDF Engine**: Powered by `pdf-lib` with magic-byte (`%PDF-`) inspection, SHA-256 binary deduplication, and defensive validation that never throws unhandled errors.
 
 ---
 
-## Key Features (Main Tasks)
-1. **Requirements Loading**: Dynamic loading and validation of `requirements.json` with fallback defaults and order sorting.
-2. **Robust Multi-PDF Upload**: Drag-and-drop pool with magic-byte (`%PDF-`) checking, page counting, and file size/count limits (30 files / 50 MB). Non-PDF files are caught and rejected cleanly.
-3. **Smart 1-to-1 Matching**: Match files to tender requirement slots with full change and undo capabilities.
-4. **Duplicate Content Detection**: Identical binary content flagged via SHA-256 hashing; matching multiple copies of duplicate files is disallowed.
-5. **Real-Time Expiry & Status Verification**: Instant calculation across all 5 requirement statuses (`Missing`, `Expiry date needed`, `Expired`, `Not provided`, `OK`) using direct `YYYY-MM-DD` string comparison against submission deadline (`2026-10-20`).
-6. **Compliant PDF Assembly**: Single English cover page + ordered document pages + non-obscuring running footer (`<tender_id> | Page X of Y`) inside an expanded 32pt bottom band.
-7. **Full Bangla / English Parity**: Instant toggle with complete language parity for all UI text, status descriptions, numbers (`Intl`), and document titles (`title_bn`).
+## Key Feature Highlights
 
----
+### 1. Responsive Design & M3 Expressive Layout
+- **1024px Breakpoint Switch**:
+  - **Desktop (≥ 1024px)**: Complete actions row (`Load sample`, `Export CSV`, `Reset`, `Upload`, and AI settings) accessible directly in the top bar as text buttons.
+  - **Mobile / Tablet (< 1024px)**: Top bar holds only the brand (truncated), language segmented pill (`EN | বাং`), and theme button. All workspace actions move to a floating M3 bottom dock with priority-based color blocking.
+  - Viewport-safe bottom clearance (`pb-[calc(92px+env(safe-area-inset-bottom))]`) ensures the dock never obscures workspace content or table rows.
+- **Compact Blocked Hero Card**:
+  - Displays a clean single-row status banner with alert icon, issue count, ready ratio, and a responsive thin progress bar.
+  - Styled with the tonal `errorContainer` role instead of an overwhelming saturated slab.
+  - Collapses issues to a maximum of 3 items with an in-place `+X more` / `Show less` expander.
+  - Features plain-language guidance (*"Fix these to continue."* / *"এগোতে এগুলো ঠিক করুন।"*) and houses the primary action button directly inside the container.
 
-## Bonus Features
-- **CSV Checklist Export**: Downloadable checklist in UTF-8 BOM CSV format containing document orders, titles, filenames, page counts, expiry dates, and statuses.
-- **Table of Contents / Index Page**: Optional second-page index calculated in two passes for exact page numbers.
-- **Smart Auto-Match**: Heuristic name and keyword matcher resolving file associations and filtering out expired copies.
-- **Client-Side Persistence**: Automatic state recovery via `localStorage` with `app:v1:` key prefix.
+### 2. Smart Read Layer 1: Heuristic Matcher (`src/logic/matcher.ts`)
+- **Automated Slot Matching**: Evaluates unmatched uploaded files against tender requirements using a bilingual keyword scoring matrix (Bangla & English procurement dictionaries).
+- **Year & Expiry Scoring**: Penalizes filenames matching past years (`2024`, `2025`) and prioritizes active years (`2026`, `2027`) to resolve valid files first.
+- **Collision & Duplicate Prevention**: Strictly enforces 1-to-1 slot mapping and rejects matching duplicate binary copies (identical SHA-256 hashes) across distinct requirements.
+
+### 3. Optional AI Feature: Client-Side Gemini Document Reader (`src/ui/AiSettingsSheet.tsx`)
+- **Strict Privacy**: Zero hardcoded keys or backend proxies. Users provide their own Google Gemini API key.
+- **In-Memory / Tab-Only Storage**: Key is held in memory and only stored in `sessionStorage` if the user explicitly opts in for that tab; never stored in persistent `localStorage`.
+- **Explicit Consent**: Requires active opt-in consent before any document payload is transmitted.
+- **Resilient Fallback**: The entire application and all core features remain 100% functional without AI.
+
+### 4. Bilingual Parity & Accessibility
+- **Full English & Bangla Parity**: Every user-visible label, button, badge, status description, and formatted number (`Intl`) has instant bilingual parity.
+- **Light / Dark / System Themes**: Adaptive M3 surface tones generated with high-contrast accessibility across all viewport widths.
+- **Button Physics**: M3 spring release animations (`cubic-bezier(0.34, 1.56, 0.64, 1)`) with `whitespace-nowrap` labels and morphing pressed states.
 
 ---
 
@@ -52,18 +62,11 @@ npm run build
 ---
 
 ## Deliverables in Repository
-- `output/T-2026-0417_Package.pdf`: Full 16-page verified tender package generated from the provided sample pack.
+- `output/T-2026-0417_Package.pdf`: Full verified tender package generated from the sample pack.
 - `screenshots/`:
   - `screenshots/document_statuses_desktop.png`: Status dashboard and checklist matching view.
-  - `screenshots/mobile_view_390px.png`: Mobile layout view at 390px width with floating bottom dock.
+  - `screenshots/mobile_view_390px.png`: Mobile layout view with floating bottom dock.
 - `LICENSE`: MIT License.
-
----
-
-## AI Tools & Prompts
-- **AI Tool**: Antigravity with Gemini 3.8 Flash (DeepMind).
-- **Most Useful Prompt**:
-  > *"pdf-lib only. Page count via PDFDocument.load. Duplicates via SHA-256 of file bytes. PDF check = .pdf extension AND first bytes %PDF-. Status logic: no file + mandatory = Missing; no file + optional = Not provided; file + has_expiry + no date = Expiry date needed; date < deadline = Expired; else OK. Build each output page taller than the source page by a 32pt bottom band, draw the original page in the upper part, and put the footer in the band."*
 
 ---
 

@@ -1,0 +1,11 @@
+import '@fontsource-variable/noto-sans-bengali/wght.css'
+import './ui/tokens.css'
+import { StrictMode } from 'react'
+import { createRoot } from 'react-dom/client'
+import App from './App.tsx'
+
+createRoot(document.getElementById('root')!).render(
+  <StrictMode>
+    <App />
+  </StrictMode>,
+)

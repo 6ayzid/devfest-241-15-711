@@ -87,12 +87,12 @@ export const Button: React.FC<ButtonProps> = ({
         opacity: disabled ? 0.45 : 1,
         cursor: disabled ? 'not-allowed' : 'pointer',
       }}
-      className={`m3-btn inline-flex items-center justify-center gap-2.5 font-semibold transition-[border-radius,transform,background-color,width] duration-[400ms] ease-[cubic-bezier(0.34,1.56,0.64,1)] ${sizeClasses} ${
+      className={`m3-btn inline-flex items-center justify-center gap-2.5 font-semibold whitespace-nowrap shrink-0 max-w-full [&>svg]:shrink-0 transition-[border-radius,transform,background-color,width] duration-[400ms] ease-[cubic-bezier(0.34,1.56,0.64,1)] ${sizeClasses} ${
         pressed ? '!rounded-[12px] !scale-[0.97]' : ''
       } ${className}`}
     >
       {icon}
-      {children && <span>{children}</span>}
+      {children && <span className="whitespace-nowrap min-w-0 truncate">{children}</span>}
     </button>
   );
 };

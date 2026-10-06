@@ -6,6 +6,7 @@ export interface DockActionItem {
   id: string;
   icon: React.ReactNode;
   labelKey: string;
+  dockLabelKey?: string;
   priority: number;
   isPrimary?: boolean;
   disabled?: boolean;
@@ -18,8 +19,8 @@ export interface BottomDockProps {
 }
 
 export const BottomDock: React.FC<BottomDockProps> = ({ actions, lang }) => {
-  // Sort actions by priority and show top 3 on mobile
-  const sortedActions = [...actions].sort((a, b) => b.priority - a.priority).slice(0, 3);
+  // Sort actions by priority and show all actions (up to 4) on mobile (< 1024px)
+  const sortedActions = [...actions].sort((a, b) => b.priority - a.priority).slice(0, 4);
 
   return (
     <nav
@@ -27,11 +28,14 @@ export const BottomDock: React.FC<BottomDockProps> = ({ actions, lang }) => {
         backgroundColor: 'var(--md-sys-color-surface-container-high)',
         borderRadius: '28px',
         boxShadow: '0 8px 32px rgba(0,0,0,0.18)',
+        bottom: 'calc(12px + env(safe-area-inset-bottom))',
       }}
-      className="sm:hidden fixed bottom-3 left-4 right-4 h-[64px] z-50 flex items-center justify-around px-2 mb-[env(safe-area-inset-bottom)]"
+      className="lg:hidden fixed left-3 right-3 sm:left-4 sm:right-4 h-[64px] z-50 flex items-center justify-around px-2 max-w-[560px] mx-auto select-none"
     >
       {sortedActions.map((act) => {
         const isFilled = act.isPrimary;
+        const label = act.dockLabelKey ? t(act.dockLabelKey, lang) : t(act.labelKey, lang);
+
         return (
           <button
             key={act.id}
@@ -48,12 +52,12 @@ export const BottomDock: React.FC<BottomDockProps> = ({ actions, lang }) => {
               borderRadius: isFilled ? '20px' : '16px',
               opacity: act.disabled ? 0.4 : 1,
             }}
-            className={`flex items-center gap-2 px-3 py-2 text-xs font-semibold cursor-pointer transition-[border-radius,transform,background-color] duration-200 active:scale-95 active:rounded-[12px] ${
-              isFilled ? 'px-4 shadow-xs' : ''
+            className={`flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-3 py-2 text-xs font-semibold cursor-pointer whitespace-nowrap min-w-0 transition-[border-radius,transform,background-color] duration-200 active:scale-95 active:rounded-[12px] ${
+              isFilled ? 'px-3.5 sm:px-4 shadow-xs shrink-0' : 'truncate'
             }`}
           >
-            {act.icon}
-            <span>{t(act.labelKey, lang)}</span>
+            <span className="shrink-0 [&>svg]:shrink-0">{act.icon}</span>
+            <span className="whitespace-nowrap truncate">{label}</span>
           </button>
         );
       })}

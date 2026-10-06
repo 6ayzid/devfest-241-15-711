@@ -34,8 +34,7 @@ import {
   UploadIcon,
   FileSpreadsheetIcon,
   RefreshIcon,
-  WandIcon,
-  FilePdfIcon,
+  FileJsonIcon,
   SparkleIcon,
 } from './ui/icons';
 
@@ -600,33 +599,46 @@ export default function App() {
     dispatch({ type: 'SET_THEME', theme: nextTheme });
   };
 
-  // Mobile dock actions list
-  const dockActions: DockActionItem[] = [
+  // Single actions array for both TopBar (>= 1024px) and BottomDock (< 1024px)
+  const appActions: DockActionItem[] = [
     {
-      id: 'generate',
-      icon: <FilePdfIcon size={20} />,
-      labelKey: 'dock_generate',
-      priority: 100,
-      isPrimary: true,
-      disabled: !state.result.isReady,
-      onPress: state.generatedBlobUrl ? handleDownloadPdf : handleGeneratePdf,
+      id: 'load-sample',
+      icon: <FileJsonIcon size={18} />,
+      labelKey: 'btn_load_sample_json',
+      dockLabelKey: 'dock_load',
+      priority: 80,
+      onPress: () => requirementsFileInputRef.current?.click(),
+    },
+    {
+      id: 'export-csv',
+      icon: <FileSpreadsheetIcon size={18} />,
+      labelKey: 'btn_export_csv',
+      dockLabelKey: 'dock_csv',
+      priority: 70,
+      onPress: handleExportCsv,
+    },
+    {
+      id: 'reset',
+      icon: <RefreshIcon size={18} />,
+      labelKey: 'btn_reset_demo',
+      dockLabelKey: 'dock_reset',
+      priority: 60,
+      onPress: () => dispatch({ type: 'RESET_DATA' }),
     },
     {
       id: 'upload',
-      icon: <UploadIcon size={20} />,
-      labelKey: 'dock_upload',
-      priority: 80,
+      icon: <UploadIcon size={18} />,
+      labelKey: 'btn_upload',
+      dockLabelKey: 'dock_upload',
+      priority: 100,
+      isPrimary: true,
       onPress: () => {
-        window.scrollTo({ top: 300, behavior: 'smooth' });
-      },
-    },
-    {
-      id: 'documents',
-      icon: <WandIcon size={20} />,
-      labelKey: 'dock_documents',
-      priority: 60,
-      onPress: () => {
-        dispatch({ type: 'AUTO_MATCH' });
+        const input = document.getElementById('pdf-upload-input') as HTMLInputElement | null;
+        if (input) {
+          input.click();
+        } else {
+          window.scrollTo({ top: 300, behavior: 'smooth' });
+        }
       },
     },
   ];
@@ -634,58 +646,36 @@ export default function App() {
   return (
     <ErrorBoundary>
       <div className="min-h-[100dvh] flex flex-col bg-[var(--md-sys-color-surface)] text-[var(--md-sys-color-on-surface)] selection:bg-[var(--md-sys-color-primary-container)] selection:text-[var(--md-sys-color-on-primary-container)]">
+        {/* Hidden requirements JSON file input */}
+        <input
+          type="file"
+          ref={requirementsFileInputRef}
+          accept=".json"
+          className="hidden"
+          onChange={handleRequirementsUpload}
+        />
+
         {/* TOP BAR */}
         <TopBar
           lang={state.language}
           theme={state.theme}
           onLanguageChange={(l) => dispatch({ type: 'SET_LANGUAGE', lang: l })}
           onThemeCycle={handleThemeCycle}
-          desktopActions={
-            <>
-              <input
-                type="file"
-                ref={requirementsFileInputRef}
-                accept=".json"
-                className="hidden"
-                onChange={handleRequirementsUpload}
-              />
-              <Button
-                variant="outlined"
-                size="s"
-                onClick={() => requirementsFileInputRef.current?.click()}
-              >
-                {t('btn_load_sample_json', state.language)}
-              </Button>
-              <Button
-                variant="outlined"
-                size="s"
-                icon={<FileSpreadsheetIcon size={16} />}
-                onClick={handleExportCsv}
-              >
-                {t('btn_export_csv', state.language)}
-              </Button>
-              <Button
-                variant="outlined"
-                size="s"
-                icon={<RefreshIcon size={14} />}
-                onClick={() => dispatch({ type: 'RESET_DATA' })}
-              >
-                {t('btn_reset_demo', state.language)}
-              </Button>
-              <Button
-                variant="secondary"
-                size="s"
-                icon={<SparkleIcon size={16} />}
-                onClick={() => setAiSheetOpen(true)}
-              >
-                {t('ai_settings_btn', state.language)}
-              </Button>
-            </>
+          actions={appActions}
+          desktopExtraActions={
+            <Button
+              variant="secondary"
+              size="s"
+              icon={<SparkleIcon size={16} />}
+              onClick={() => setAiSheetOpen(true)}
+            >
+              {t('ai_settings_btn', state.language)}
+            </Button>
           }
         />
 
         {/* MAIN WORKSPACE */}
-        <main className="flex-1 max-w-7xl w-full mx-auto p-4 md:p-8 space-y-6 pb-[120px] sm:pb-12">
+        <main className="flex-1 max-w-7xl w-full min-w-0 mx-auto p-4 md:p-8 space-y-6 pb-[calc(92px+env(safe-area-inset-bottom))] md:pb-[calc(92px+env(safe-area-inset-bottom))] lg:pb-12">
           {/* Tender Metadata Ribbon */}
           <section
             style={{
@@ -763,24 +753,8 @@ export default function App() {
               <span>{t('option_include_index', state.language)}</span>
             </label>
 
-            {/* Mobile Actions in main flow */}
-            <div className="flex sm:hidden flex-wrap items-center gap-2">
-              <Button
-                variant="outlined"
-                size="s"
-                icon={<FileSpreadsheetIcon size={16} />}
-                onClick={handleExportCsv}
-              >
-                CSV
-              </Button>
-              <Button
-                variant="outlined"
-                size="s"
-                icon={<RefreshIcon size={14} />}
-                onClick={() => dispatch({ type: 'RESET_DATA' })}
-              >
-                Reset
-              </Button>
+            {/* Mobile AI settings button (< 1024px) */}
+            <div className="flex lg:hidden items-center gap-2">
               <Button
                 variant="secondary"
                 size="s"
@@ -824,8 +798,8 @@ export default function App() {
           </section>
         </main>
 
-        {/* MOBILE BOTTOM DOCK (< 640px) */}
-        <BottomDock actions={dockActions} lang={state.language} />
+        {/* MOBILE BOTTOM DOCK (< 1024px) */}
+        <BottomDock actions={appActions} lang={state.language} />
 
         {/* OPTIONAL AI SETTINGS (drawer / bottom sheet) */}
         <AiSettingsSheet

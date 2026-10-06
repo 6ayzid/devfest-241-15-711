@@ -62,6 +62,7 @@ export const FilePool: React.FC<FilePoolProps> = ({
         </div>
 
         <input
+          id="pdf-upload-input"
           type="file"
           ref={inputRef}
           multiple

@@ -152,6 +152,9 @@ export const translations: Record<Language, Record<string, string>> = {
 
     // Mobile Dock
     dock_upload: 'Upload',
+    dock_load: 'Load',
+    dock_csv: 'CSV',
+    dock_reset: 'Reset',
     dock_documents: 'Documents',
     dock_generate: 'Generate',
   },
@@ -176,13 +179,20 @@ export const translations: Record<Language, Record<string, string>> = {
     hero_ready_desc: 'সকল {ready}টি ডকুমেন্ট যাচাইকৃত। কোনো বাধাদানকারী সমস্যা নেই।',
     hero_blocked_title: '{blocking}টি সমস্যা সমাধান প্রয়োজন',
     hero_blocked_desc: '{total}টির মধ্যে {ready}টি ডকুমেন্ট প্রস্তুত। প্যাকেজ তৈরিতে নিচের সমস্যাগুলো ঠিক করুন।',
+    hero_blocked_count_one: '{blocking}টি সমস্যা',
+    hero_blocked_count: '{blocking}টি সমস্যা',
+    hero_ready_of_total: '{total}টির মধ্যে {ready}টি প্রস্তুত',
+    hero_fix_hint: 'এগোতে এগুলো ঠিক করুন।',
+    hero_more_issues: 'আরও {count}টি',
+    hero_less_issues: 'কম দেখান',
     btn_generate_package: 'প্যাকেজ তৈরি করুন',
     btn_generating: 'পিডিএফ তৈরি হচ্ছে...',
     btn_download_package: '{tenderId}_Package.pdf ডাউনলোড করুন',
-    btn_export_csv: 'চেকলিস্ট CSV এক্সপোর্ট',
+    btn_export_csv: 'CSV এক্সপোর্ট',
     btn_auto_match: 'স্মার্ট অটো-ম্যাচ',
-    btn_reset_demo: 'ডেমো ডেটা রিসেট',
-    btn_load_sample_json: 'নমুনা রিকোয়ারমেন্টস লোড করুন',
+    btn_reset_demo: 'রিসেট',
+    btn_load_sample_json: 'নমুনা লোড',
+    btn_upload: 'আপলোড',
 
     // Statuses
     status_missing: 'অনুপস্থিত',
@@ -299,6 +309,9 @@ export const translations: Record<Language, Record<string, string>> = {
 
     // Mobile Dock
     dock_upload: 'আপলোড',
+    dock_load: 'লোড',
+    dock_csv: 'CSV',
+    dock_reset: 'রিসেট',
     dock_documents: 'ডকুমেন্ট',
     dock_generate: 'প্যাকেজ তৈরি',
   },

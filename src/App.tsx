@@ -19,6 +19,12 @@ import { generateTenderPackage } from './logic/pdfGenerator';
 import { generateChecklistCsv } from './logic/csvExporter';
 import { loadSession, saveSession } from './logic/storage';
 import { t } from './logic/i18n';
+import {
+  type AiDocumentAnalysis,
+  MAX_AI_FILE_SIZE,
+  readDocumentWithGemini,
+  isHighConfidence,
+} from './logic/ai/docReader';
 
 // UI Presentation
 import { TopBar } from './ui/TopBar';
@@ -65,6 +71,8 @@ type AppAction =
   | { type: 'UNMATCH_FILE'; reqId: string }
   | { type: 'SET_EXPIRY'; reqId: string; dateStr: string }
   | { type: 'AUTO_MATCH' }
+  | { type: 'APPLY_AI_MATCH'; reqId: string; fileId: string; expiryDate?: string }
+  | { type: 'UNDO_AI_MATCH'; reqId: string; prevFileId?: string; prevExpiryDate?: string }
   | { type: 'TOGGLE_INDEX'; value: boolean }
   | { type: 'SET_THEME'; theme: 'light' | 'dark' | 'system' }
   | { type: 'SET_LANGUAGE'; lang: Language }
@@ -364,6 +372,89 @@ function appReducer(state: AppState, action: AppAction): AppState {
       };
     }
 
+    case 'APPLY_AI_MATCH': {
+      const nextMatches = new Map(state.matches);
+      for (const [rId, fId] of nextMatches.entries()) {
+        if (fId === action.fileId && rId !== action.reqId) {
+          nextMatches.delete(rId);
+        }
+      }
+      nextMatches.set(action.reqId, action.fileId);
+
+      const nextExpiries = new Map(state.expiryDates);
+      if (action.expiryDate) {
+        nextExpiries.set(action.reqId, action.expiryDate);
+      }
+
+      const targetReq = state.requirementsData.requirements.find(
+        (r) => r.id === action.reqId
+      );
+
+      const { readiness } = computeDocumentStatuses({
+        requirements: state.requirementsData.requirements,
+        submissionDeadline: state.requirementsData.tender.submission_deadline,
+        matches: nextMatches,
+        expiryDates: nextExpiries,
+        files: state.files,
+      });
+
+      return {
+        ...state,
+        matches: nextMatches,
+        expiryDates: nextExpiries,
+        prevResult: state.result,
+        result: readiness,
+        lastCause: {
+          type: 'match',
+          documentTitle: targetReq?.title_en,
+        },
+        changeId: state.changeId + 1,
+        generatedBlobUrl: null,
+      };
+    }
+
+    case 'UNDO_AI_MATCH': {
+      const nextMatches = new Map(state.matches);
+      if (action.prevFileId) {
+        nextMatches.set(action.reqId, action.prevFileId);
+      } else {
+        nextMatches.delete(action.reqId);
+      }
+
+      const nextExpiries = new Map(state.expiryDates);
+      if (action.prevExpiryDate !== undefined) {
+        nextExpiries.set(action.reqId, action.prevExpiryDate);
+      } else {
+        nextExpiries.delete(action.reqId);
+      }
+
+      const targetReq = state.requirementsData.requirements.find(
+        (r) => r.id === action.reqId
+      );
+
+      const { readiness } = computeDocumentStatuses({
+        requirements: state.requirementsData.requirements,
+        submissionDeadline: state.requirementsData.tender.submission_deadline,
+        matches: nextMatches,
+        expiryDates: nextExpiries,
+        files: state.files,
+      });
+
+      return {
+        ...state,
+        matches: nextMatches,
+        expiryDates: nextExpiries,
+        prevResult: state.result,
+        result: readiness,
+        lastCause: {
+          type: 'unmatch',
+          documentTitle: targetReq?.title_en,
+        },
+        changeId: state.changeId + 1,
+        generatedBlobUrl: null,
+      };
+    }
+
     case 'TOGGLE_INDEX': {
       return {
         ...state,
@@ -432,6 +523,15 @@ export default function App() {
   const ai = useAiSettings();
   const [aiSheetOpen, setAiSheetOpen] = useState(false);
 
+  // AI Document Reader state
+  const [aiAnalyses, setAiAnalyses] = useState<Map<string, AiDocumentAnalysis>>(new Map());
+  const [aiAssignedReqs, setAiAssignedReqs] = useState<Set<string>>(new Set());
+  const [aiPreviousMatches, setAiPreviousMatches] = useState<
+    Map<string, { prevFileId?: string; prevExpiry?: string }>
+  >(new Map());
+  const [readingFileIds, setReadingFileIds] = useState<Set<string>>(new Set());
+  const [isReadingAllAi, setIsReadingAllAi] = useState(false);
+
   // Sync theme with DOM
   useEffect(() => {
     if (state.theme === 'system') {
@@ -481,7 +581,7 @@ export default function App() {
     : null;
 
   // Handle file uploads
-  const handleFileUpload = async (fileList: FileList) => {
+  const handleFileUpload = async (fileList: FileList | File[]) => {
     const currentTotalFiles = state.files.size;
     const currentTotalBytes = Array.from(state.files.values()).reduce(
       (acc, f) => acc + f.size,
@@ -599,6 +699,190 @@ export default function App() {
     dispatch({ type: 'SET_THEME', theme: nextTheme });
   };
 
+  // AI Document Reader logic
+  const processFileWithAi = async (
+    fileRecord: UploadedFileRecord
+  ): Promise<AiDocumentAnalysis | null> => {
+    if (!ai.hasKey || !ai.consent) return null;
+
+    if (fileRecord.size > MAX_AI_FILE_SIZE) {
+      const skippedAnalysis: AiDocumentAnalysis = {
+        fileId: fileRecord.id,
+        status: 'skipped_size',
+        error: t('ai_skipped_size', state.language),
+        reviewed: false,
+      };
+      setAiAnalyses((prev) => new Map(prev).set(fileRecord.id, skippedAnalysis));
+      return skippedAnalysis;
+    }
+
+    setReadingFileIds((prev) => new Set(prev).add(fileRecord.id));
+
+    try {
+      const res = await readDocumentWithGemini({
+        apiKey: ai.apiKey,
+        selectedModel: ai.effectiveModel,
+        fileBytes: fileRecord.bytes,
+        fileName: fileRecord.name,
+        fileId: fileRecord.id,
+        fileSize: fileRecord.size,
+        requirements: state.requirementsData.requirements,
+      });
+
+      if (res.ok) {
+        const analysis = res.data;
+        setAiAnalyses((prev) => new Map(prev).set(fileRecord.id, analysis));
+
+        if (analysis.matched_requirement_id) {
+          const req = state.requirementsData.requirements.find(
+            (r) => r.id === analysis.matched_requirement_id
+          );
+          if (req) {
+            const currentMatch = state.matches.get(req.id);
+            const isHigh = isHighConfidence(analysis.confidence);
+
+            // High confidence + empty slot = auto-assign with an "AI" badge, Edit, and Undo
+            if (isHigh && !currentMatch) {
+              const prevMatch = state.matches.get(req.id);
+              const prevExpiry = state.expiryDates.get(req.id);
+              setAiPreviousMatches((prev) =>
+                new Map(prev).set(req.id, { prevFileId: prevMatch, prevExpiry })
+              );
+
+              const expiryToSet =
+                req.has_expiry && analysis.expiry_date ? analysis.expiry_date : undefined;
+
+              dispatch({
+                type: 'APPLY_AI_MATCH',
+                reqId: req.id,
+                fileId: fileRecord.id,
+                expiryDate: expiryToSet,
+              });
+
+              setAiAssignedReqs((prev) => new Set(prev).add(req.id));
+            }
+          }
+        }
+        return analysis;
+      } else {
+        const errAnalysis: AiDocumentAnalysis = {
+          fileId: fileRecord.id,
+          status: 'error',
+          error: res.error,
+          reviewed: false,
+        };
+        setAiAnalyses((prev) => new Map(prev).set(fileRecord.id, errAnalysis));
+        return errAnalysis;
+      }
+    } finally {
+      setReadingFileIds((prev) => {
+        const next = new Set(prev);
+        next.delete(fileRecord.id);
+        return next;
+      });
+    }
+  };
+
+  const handleReadFileAi = async (fileId: string) => {
+    const fileRecord = state.files.get(fileId);
+    if (!fileRecord) return;
+    await processFileWithAi(fileRecord);
+  };
+
+  const handleReadWithAi = async () => {
+    if (!ai.hasKey || !ai.consent || isReadingAllAi) return;
+    setIsReadingAllAi(true);
+    try {
+      for (const fileRecord of state.files.values()) {
+        const existing = aiAnalyses.get(fileRecord.id);
+        if (existing && existing.status === 'done') continue;
+        await processFileWithAi(fileRecord);
+      }
+    } finally {
+      setIsReadingAllAi(false);
+    }
+  };
+
+  const handleApplyAiSuggestion = (
+    reqId: string,
+    fileId: string,
+    expiryDate?: string
+  ) => {
+    const prevMatch = state.matches.get(reqId);
+    const prevExpiry = state.expiryDates.get(reqId);
+    setAiPreviousMatches((prev) =>
+      new Map(prev).set(reqId, { prevFileId: prevMatch, prevExpiry })
+    );
+
+    dispatch({
+      type: 'APPLY_AI_MATCH',
+      reqId,
+      fileId,
+      expiryDate,
+    });
+
+    setAiAssignedReqs((prev) => new Set(prev).add(reqId));
+
+    setAiAnalyses((prev) => {
+      const next = new Map(prev);
+      const an = next.get(fileId);
+      if (an) {
+        next.set(fileId, { ...an, reviewed: true, applied: true });
+      }
+      return next;
+    });
+  };
+
+  const handleUndoAiMatch = (reqId: string) => {
+    const prev = aiPreviousMatches.get(reqId);
+    dispatch({
+      type: 'UNDO_AI_MATCH',
+      reqId,
+      prevFileId: prev?.prevFileId,
+      prevExpiryDate: prev?.prevExpiry,
+    });
+
+    setAiAssignedReqs((prevSet) => {
+      const next = new Set(prevSet);
+      next.delete(reqId);
+      return next;
+    });
+  };
+
+  const handleMarkAllReviewed = () => {
+    setAiAnalyses((prev) => {
+      const next = new Map(prev);
+      for (const [k, v] of next.entries()) {
+        next.set(k, { ...v, reviewed: true });
+      }
+      return next;
+    });
+  };
+
+  const aiSuggestions = new Map<
+    string,
+    { file: UploadedFileRecord; analysis: AiDocumentAnalysis }
+  >();
+  for (const analysis of aiAnalyses.values()) {
+    if (analysis.status === 'done' && analysis.matched_requirement_id) {
+      const file = state.files.get(analysis.fileId);
+      if (file) {
+        aiSuggestions.set(analysis.matched_requirement_id, { file, analysis });
+      }
+    }
+  }
+
+  let pendingReviewCount = 0;
+  for (const analysis of aiAnalyses.values()) {
+    if (
+      analysis.status === 'done' &&
+      analysis.matched_requirement_id &&
+      !analysis.reviewed
+    ) {
+      pendingReviewCount++;
+    }
+  }
+
   // Single actions array for both TopBar (>= 1024px) and BottomDock (< 1024px)
   const appActions: DockActionItem[] = [
     {
@@ -623,7 +907,12 @@ export default function App() {
       labelKey: 'btn_reset_demo',
       dockLabelKey: 'dock_reset',
       priority: 60,
-      onPress: () => dispatch({ type: 'RESET_DATA' }),
+      onPress: () => {
+        dispatch({ type: 'RESET_DATA' });
+        setAiAnalyses(new Map());
+        setAiAssignedReqs(new Set());
+        setAiPreviousMatches(new Map());
+      },
     },
     {
       id: 'upload',
@@ -772,9 +1061,35 @@ export default function App() {
               files={Array.from(state.files.values())}
               lang={state.language}
               onUpload={handleFileUpload}
-              onRemove={(fId) => dispatch({ type: 'REMOVE_FILE', fileId: fId })}
+              onRemove={(fId) => {
+                dispatch({ type: 'REMOVE_FILE', fileId: fId });
+                setAiAnalyses((prev) => {
+                  const next = new Map(prev);
+                  next.delete(fId);
+                  return next;
+                });
+              }}
               uploadError={state.uploadError}
               onClearError={() => dispatch({ type: 'SET_UPLOAD_ERROR', error: null })}
+              aiConfigured={Boolean(ai.hasKey && ai.consent)}
+              isReadingAllAi={isReadingAllAi}
+              readingFileIds={readingFileIds}
+              aiAnalyses={aiAnalyses}
+              onReadWithAi={handleReadWithAi}
+              onReadFileAi={handleReadFileAi}
+              requirements={state.requirementsData.requirements}
+              matches={state.matches}
+              onAssignRequirement={(fileId, reqId) => {
+                if (reqId) {
+                  dispatch({ type: 'MATCH_FILE', reqId, fileId });
+                } else {
+                  for (const [rId, fId] of state.matches.entries()) {
+                    if (fId === fileId) {
+                      dispatch({ type: 'UNMATCH_FILE', reqId: rId });
+                    }
+                  }
+                }
+              }}
             />
           </section>
 
@@ -794,6 +1109,12 @@ export default function App() {
                 dispatch({ type: 'SET_EXPIRY', reqId: rId, dateStr })
               }
               onAutoMatch={() => dispatch({ type: 'AUTO_MATCH' })}
+              aiAssignedReqs={aiAssignedReqs}
+              aiSuggestions={aiSuggestions}
+              pendingReviewCount={pendingReviewCount}
+              onUndoAiMatch={handleUndoAiMatch}
+              onApplyAiSuggestion={handleApplyAiSuggestion}
+              onMarkAllReviewed={handleMarkAllReviewed}
             />
           </section>
         </main>

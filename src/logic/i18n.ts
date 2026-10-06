@@ -143,6 +143,21 @@ export const translations: Record<Language, Record<string, string>> = {
     ai_err_content_blocked: 'Google declined to process this document.',
     ai_err_aborted: 'Cancelled.',
 
+    // Optional AI: document reader & suggestions
+    btn_read_with_ai: 'Read with AI',
+    btn_read_file_ai: 'Read with AI',
+    ai_reading_all: 'Reading with AI...',
+    ai_reading_file: 'Reading...',
+    ai_skipped_size: 'Exceeds 15MB AI limit',
+    ai_error_badge: 'AI Error',
+    ai_badge: 'AI',
+    btn_undo: 'Undo',
+    btn_apply_suggestion: 'Apply Suggestion',
+    ai_suggests: 'AI suggests: "{file}" ({conf})',
+    ai_pending_review_count: '{count} AI suggestion(s) pending review',
+    btn_mark_all_reviewed: 'Mark all reviewed',
+    ai_match_success: 'AI matched "{file}" to {req}',
+
     // Theme and Language
     lang_en: 'English',
     lang_bn: 'বাংলা',
@@ -299,6 +314,21 @@ export const translations: Record<Language, Record<string, string>> = {
     ai_err_invalid_model: 'মডেল পাওয়া যায়নি। ওভাররাইড ঘরের মডেল আইডি দেখুন।',
     ai_err_content_blocked: 'Google এই ডকুমেন্টটি প্রসেস করতে অস্বীকার করেছে।',
     ai_err_aborted: 'বাতিল করা হয়েছে।',
+
+    // Optional AI: document reader & suggestions
+    btn_read_with_ai: 'এআই দিয়ে পড়ুন',
+    btn_read_file_ai: 'এআই দিয়ে পড়ুন',
+    ai_reading_all: 'এআই পড়ছে...',
+    ai_reading_file: 'পড়া হচ্ছে...',
+    ai_skipped_size: '১৫ এমবির বেশি (স্কিপ)',
+    ai_error_badge: 'এআই ত্রুটি',
+    ai_badge: 'AI',
+    btn_undo: 'পূর্বাবস্থায় (Undo)',
+    btn_apply_suggestion: 'পরামর্শ প্রয়োগ করুন',
+    ai_suggests: 'এআই পরামর্শ: "{file}" ({conf})',
+    ai_pending_review_count: '{count}টি এআই পরামর্শ পর্যালোচনার অপেক্ষায়',
+    btn_mark_all_reviewed: 'সবগুলো পর্যালোচনা চিহ্নিত করুন',
+    ai_match_success: 'এআই "{file}" নথিটিকে {req}-এ যুক্ত করেছে',
 
     // Theme and Language
     lang_en: 'English',

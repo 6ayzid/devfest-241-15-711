@@ -1,9 +1,10 @@
 import React from 'react';
 import type { DocumentStatusInfo, UploadedFileRecord } from '../logic/models';
 import type { Language } from '../logic/i18n';
+import type { AiDocumentAnalysis } from '../logic/ai/docReader';
 import { t, formatNumber } from '../logic/i18n';
 import { StatusBadge } from './StatusBadge';
-import { LinkIcon, WandIcon } from './icons';
+import { LinkIcon, WandIcon, SparkleIcon, UndoIcon, CheckCircleIcon } from './icons';
 import { Button } from './Button';
 
 export interface ChecklistTableProps {
@@ -16,6 +17,12 @@ export interface ChecklistTableProps {
   onUnmatch: (reqId: string) => void;
   onExpiryChange: (reqId: string, dateStr: string) => void;
   onAutoMatch: () => void;
+  aiAssignedReqs?: Set<string>;
+  aiSuggestions?: Map<string, { file: UploadedFileRecord; analysis: AiDocumentAnalysis }>;
+  pendingReviewCount?: number;
+  onUndoAiMatch?: (reqId: string) => void;
+  onApplyAiSuggestion?: (reqId: string, fileId: string, expiryDate?: string) => void;
+  onMarkAllReviewed?: () => void;
 }
 
 export const ChecklistTable: React.FC<ChecklistTableProps> = ({
@@ -28,6 +35,12 @@ export const ChecklistTable: React.FC<ChecklistTableProps> = ({
   onUnmatch,
   onExpiryChange,
   onAutoMatch,
+  aiAssignedReqs,
+  aiSuggestions,
+  pendingReviewCount,
+  onUndoAiMatch,
+  onApplyAiSuggestion,
+  onMarkAllReviewed,
 }) => {
   // Pre-calculate which hashes are matched to which requirements to disable duplicate copies
   const matchedHashesToReq = new Map<string, string>(); // hash -> reqId
@@ -69,12 +82,39 @@ export const ChecklistTable: React.FC<ChecklistTableProps> = ({
         </Button>
       </div>
 
+      {/* Non-blocking indicator: N AI suggestions pending review */}
+      {pendingReviewCount !== undefined && pendingReviewCount > 0 && (
+        <div
+          style={{
+            backgroundColor: 'var(--md-sys-color-tertiary-container)',
+            color: 'var(--md-sys-color-on-tertiary-container)',
+            borderRadius: '20px',
+          }}
+          className="p-3.5 px-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs md:text-sm font-semibold animate-[fadeIn_200ms_ease-out]"
+        >
+          <div className="flex items-center gap-2.5">
+            <SparkleIcon size={18} className="shrink-0" />
+            <span>{t('ai_pending_review_count', lang, { count: pendingReviewCount })}</span>
+          </div>
+          <button
+            type="button"
+            onClick={onMarkAllReviewed}
+            className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-[12px] bg-[var(--md-sys-color-surface)] text-[var(--md-sys-color-on-surface)] hover:bg-[var(--md-sys-color-surface-container-high)] transition-colors duration-150 cursor-pointer font-bold text-xs shrink-0 self-start sm:self-auto shadow-xs"
+          >
+            <CheckCircleIcon size={14} />
+            <span>{t('btn_mark_all_reviewed', lang)}</span>
+          </button>
+        </div>
+      )}
+
       {/* Responsive document cards / table */}
       <div className="space-y-3.5">
         {documents.map((doc) => {
           const matchedFileId = matches.get(doc.requirementId) || '';
           const currentExpiry = expiryDates.get(doc.requirementId) || '';
           const title = lang === 'bn' ? doc.title_bn : doc.title_en;
+          const isAiAssigned = Boolean(aiAssignedReqs?.has(doc.requirementId));
+          const suggestion = aiSuggestions?.get(doc.requirementId);
 
           return (
             <div
@@ -82,126 +122,211 @@ export const ChecklistTable: React.FC<ChecklistTableProps> = ({
               style={{
                 backgroundColor: 'var(--md-sys-color-surface)',
               }}
-              className="p-4 md:p-5 rounded-[20px] shadow-xs flex flex-col lg:flex-row lg:items-center justify-between gap-4 transition-all duration-200"
+              className="p-4 md:p-5 rounded-[20px] shadow-xs flex flex-col gap-3 transition-all duration-200"
             >
-              {/* Order & Title */}
-              <div className="flex items-start gap-3 min-w-[240px] flex-1">
-                <span className="w-8 h-8 rounded-full bg-[var(--md-sys-color-surface-container-high)] text-[var(--md-sys-color-on-surface)] font-bold text-xs flex items-center justify-center shrink-0 mt-0.5">
-                  {formatNumber(doc.order, lang)}
-                </span>
-                <div className="space-y-1">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="font-bold text-sm md:text-base text-[var(--md-sys-color-on-surface)]">
-                      {title}
-                    </span>
-                    <span
-                      style={{
-                        backgroundColor: doc.mandatory
-                          ? 'var(--md-sys-color-primary-container)'
-                          : 'var(--md-sys-color-surface-container)',
-                        color: doc.mandatory
-                          ? 'var(--md-sys-color-on-primary-container)'
-                          : 'var(--md-sys-color-on-surface-variant)',
-                      }}
-                      className="px-2 py-0.5 rounded-[8px] text-[11px] font-semibold tracking-wide"
-                    >
-                      {doc.mandatory ? t('mandatory_badge', lang) : t('optional_badge', lang)}
-                    </span>
-                    {doc.has_expiry && (
-                      <span className="px-2 py-0.5 rounded-[8px] text-[11px] font-semibold bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300">
-                        {t('expiry_required_badge', lang)}
+              <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+                {/* Order & Title */}
+                <div className="flex items-start gap-3 min-w-[240px] flex-1">
+                  <span className="w-8 h-8 rounded-full bg-[var(--md-sys-color-surface-container-high)] text-[var(--md-sys-color-on-surface)] font-bold text-xs flex items-center justify-center shrink-0 mt-0.5">
+                    {formatNumber(doc.order, lang)}
+                  </span>
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="font-bold text-sm md:text-base text-[var(--md-sys-color-on-surface)]">
+                        {title}
                       </span>
-                    )}
-                  </div>
-                  <p className="text-xs text-[var(--md-sys-color-on-surface-variant)]">
-                    ID: {doc.requirementId} • {t(`status_desc_${doc.status}`, lang)}
-                  </p>
-                </div>
-              </div>
-
-              {/* Match Select dropdown */}
-              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 shrink-0">
-                <div className="relative min-w-[220px]">
-                  <select
-                    value={matchedFileId}
-                    onChange={(e) => {
-                      const val = e.target.value;
-                      if (val) {
-                        onMatch(doc.requirementId, val);
-                      } else {
-                        onUnmatch(doc.requirementId);
-                      }
-                    }}
-                    style={{
-                      backgroundColor: 'var(--md-sys-color-surface-container)',
-                      color: 'var(--md-sys-color-on-surface)',
-                    }}
-                    className="w-full h-11 px-3.5 pr-8 rounded-[16px] text-xs font-semibold appearance-none cursor-pointer focus:outline-none focus:ring-2 focus:ring-[var(--md-sys-color-primary)] transition-all"
-                  >
-                    <option value="">{t('select_file_placeholder', lang)}</option>
-                    {files.map((f) => {
-                      // Check if already matched to ANOTHER requirement
-                      const isMatchedToOtherReq =
-                        Array.from(matches.entries()).some(
-                          ([rId, fId]) => fId === f.id && rId !== doc.requirementId
-                        );
-
-                      // Check if another copy of this duplicate is already matched
-                      const matchedReqForHash = matchedHashesToReq.get(f.hash);
-                      const isDuplicateConflict =
-                        Boolean(matchedReqForHash && matchedReqForHash !== doc.requirementId && f.id !== matches.get(doc.requirementId));
-
-                      const isDisabled = isMatchedToOtherReq || isDuplicateConflict || Boolean(f.error);
-
-                      let suffix = '';
-                      if (isMatchedToOtherReq) suffix = ` (${lang === 'bn' ? 'অন্য নথিতে যুক্ত' : 'Matched elsewhere'})`;
-                      else if (isDuplicateConflict) suffix = ` (${lang === 'bn' ? 'ডুপ্লিকেট কপি ব্যবহৃত' : 'Duplicate copy used'})`;
-                      else if (f.error) suffix = ` (${lang === 'bn' ? 'ক্ষতিগ্রস্ত' : 'Damaged'})`;
-
-                      return (
-                        <option
-                          key={f.id}
-                          value={f.id}
-                          disabled={isDisabled}
-                          className={isDisabled ? 'opacity-40 italic' : ''}
+                      <span
+                        style={{
+                          backgroundColor: doc.mandatory
+                            ? 'var(--md-sys-color-primary-container)'
+                            : 'var(--md-sys-color-surface-container)',
+                          color: doc.mandatory
+                            ? 'var(--md-sys-color-on-primary-container)'
+                            : 'var(--md-sys-color-on-surface-variant)',
+                        }}
+                        className="px-2 py-0.5 rounded-[8px] text-[11px] font-semibold tracking-wide"
+                      >
+                        {doc.mandatory ? t('mandatory_badge', lang) : t('optional_badge', lang)}
+                      </span>
+                      {doc.has_expiry && (
+                        <span className="px-2 py-0.5 rounded-[8px] text-[11px] font-semibold bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300">
+                          {t('expiry_required_badge', lang)}
+                        </span>
+                      )}
+                      {isAiAssigned && (
+                        <span
+                          style={{
+                            backgroundColor: 'var(--md-sys-color-primary-container)',
+                            color: 'var(--md-sys-color-on-primary-container)',
+                          }}
+                          className="px-2 py-0.5 rounded-[8px] text-[11px] font-bold tracking-wide flex items-center gap-1"
                         >
-                          {f.name} {suffix}
-                        </option>
-                      );
-                    })}
-                  </select>
-                  <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-[var(--md-sys-color-on-surface-variant)]">
-                    <LinkIcon size={14} />
+                          <SparkleIcon size={11} />
+                          <span>{t('ai_badge', lang)}</span>
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-xs text-[var(--md-sys-color-on-surface-variant)]">
+                      ID: {doc.requirementId} • {t(`status_desc_${doc.status}`, lang)}
+                    </p>
                   </div>
                 </div>
 
-                {/* Expiry Date Input (when has_expiry = true) */}
-                {doc.has_expiry && (
-                  <div className="relative">
-                    <input
-                      type="date"
-                      value={currentExpiry}
-                      disabled={!matchedFileId}
-                      onChange={(e) => onExpiryChange(doc.requirementId, e.target.value)}
+                {/* Match Select dropdown, Expiry, Undo, Status Badge */}
+                <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 shrink-0 flex-wrap">
+                  <div className="relative min-w-[200px] flex-1 sm:flex-initial">
+                    <select
+                      value={matchedFileId}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        if (val) {
+                          onMatch(doc.requirementId, val);
+                        } else {
+                          onUnmatch(doc.requirementId);
+                        }
+                      }}
                       style={{
-                        backgroundColor: matchedFileId
-                          ? 'var(--md-sys-color-surface-container)'
-                          : 'var(--md-sys-color-surface-container-high)',
+                        backgroundColor: 'var(--md-sys-color-surface-container)',
                         color: 'var(--md-sys-color-on-surface)',
                       }}
-                      className="h-11 px-3 rounded-[16px] text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-[var(--md-sys-color-primary)] disabled:opacity-40 disabled:cursor-not-allowed"
-                    />
-                    {!matchedFileId && (
-                      <span className="sr-only">Attach file first to set expiry</span>
-                    )}
-                  </div>
-                )}
+                      className="w-full h-11 px-3.5 pr-8 rounded-[16px] text-xs font-semibold appearance-none cursor-pointer focus:outline-none focus:ring-2 focus:ring-[var(--md-sys-color-primary)] transition-all"
+                    >
+                      <option value="">{t('select_file_placeholder', lang)}</option>
+                      {files.map((f) => {
+                        // Check if already matched to ANOTHER requirement
+                        const isMatchedToOtherReq =
+                          Array.from(matches.entries()).some(
+                            ([rId, fId]) => fId === f.id && rId !== doc.requirementId
+                          );
 
-                {/* Status Badge */}
-                <div className="min-w-[110px] flex justify-start sm:justify-end">
-                  <StatusBadge status={doc.status} lang={lang} />
+                        // Check if another copy of this duplicate is already matched
+                        const matchedReqForHash = matchedHashesToReq.get(f.hash);
+                        const isDuplicateConflict =
+                          Boolean(matchedReqForHash && matchedReqForHash !== doc.requirementId && f.id !== matches.get(doc.requirementId));
+
+                        // Only damaged/corrupted files cannot be matched; files matched elsewhere can be reassigned
+                        const isDisabled = Boolean(f.error);
+
+                        let suffix = '';
+                        if (isMatchedToOtherReq) suffix = ` (${lang === 'bn' ? 'অন্য নথিতে যুক্ত' : 'Matched elsewhere'})`;
+                        else if (isDuplicateConflict) suffix = ` (${lang === 'bn' ? 'ডুপ্লিকেট কপি ব্যবহৃত' : 'Duplicate copy used'})`;
+                        else if (f.error) suffix = ` (${lang === 'bn' ? 'ক্ষতিগ্রস্ত' : 'Damaged'})`;
+
+                        return (
+                          <option
+                            key={f.id}
+                            value={f.id}
+                            disabled={isDisabled}
+                            className={isDisabled ? 'opacity-40 italic' : ''}
+                          >
+                            {f.name} {suffix}
+                          </option>
+                        );
+                      })}
+                    </select>
+                    <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-[var(--md-sys-color-on-surface-variant)]">
+                      <LinkIcon size={14} />
+                    </div>
+                  </div>
+
+                  {/* Expiry Date Input (when has_expiry = true) */}
+                  {doc.has_expiry && (
+                    <div className="relative">
+                      <input
+                        type="date"
+                        value={currentExpiry}
+                        disabled={!matchedFileId}
+                        onChange={(e) => onExpiryChange(doc.requirementId, e.target.value)}
+                        style={{
+                          backgroundColor: matchedFileId
+                            ? 'var(--md-sys-color-surface-container)'
+                            : 'var(--md-sys-color-surface-container-high)',
+                          color: 'var(--md-sys-color-on-surface)',
+                        }}
+                        className="h-11 px-3 rounded-[16px] text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-[var(--md-sys-color-primary)] disabled:opacity-40 disabled:cursor-not-allowed"
+                      />
+                      {!matchedFileId && (
+                        <span className="sr-only">Attach file first to set expiry</span>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Undo Button (if matched by AI) */}
+                  {isAiAssigned && (
+                    <button
+                      type="button"
+                      onClick={() => onUndoAiMatch?.(doc.requirementId)}
+                      style={{
+                        backgroundColor: 'var(--md-sys-color-surface-container-high)',
+                        color: 'var(--md-sys-color-on-surface)',
+                      }}
+                      className="h-11 px-3 rounded-[16px] text-xs font-semibold hover:bg-[var(--md-sys-color-error-container)] hover:text-[var(--md-sys-color-on-error-container)] flex items-center gap-1.5 transition-colors cursor-pointer shrink-0"
+                      title={t('btn_undo', lang)}
+                    >
+                      <UndoIcon size={14} />
+                      <span>{t('btn_undo', lang)}</span>
+                    </button>
+                  )}
+
+                  {/* Status Badge */}
+                  <div className="min-w-[110px] flex justify-start sm:justify-end">
+                    <StatusBadge status={doc.status} lang={lang} />
+                  </div>
                 </div>
               </div>
+
+              {/* Unapplied / conflicting AI Suggestion banner */}
+              {suggestion &&
+                suggestion.file &&
+                (!matchedFileId || !isAiAssigned || suggestion.file.id !== matchedFileId) && (
+                  <div
+                    style={{
+                      backgroundColor: 'var(--md-sys-color-surface-container)',
+                      borderColor: 'var(--md-sys-color-outline-variant)',
+                    }}
+                    className="p-3.5 rounded-[16px] border flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs w-full animate-[fadeIn_150ms_ease-out]"
+                  >
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <div className="w-8 h-8 rounded-full bg-[var(--md-sys-color-primary-container)] text-[var(--md-sys-color-on-primary-container)] flex items-center justify-center shrink-0">
+                        <SparkleIcon size={15} />
+                      </div>
+                      <div className="min-w-0 space-y-0.5">
+                        <p className="font-semibold text-[var(--md-sys-color-on-surface)] truncate">
+                          {t('ai_suggests', lang, {
+                            file: suggestion.file.name,
+                            conf: String(suggestion.analysis.confidence),
+                          })}
+                        </p>
+                        {doc.has_expiry && suggestion.analysis.expiry_date && (
+                          <p className="text-[11px] text-[var(--md-sys-color-primary)] font-medium">
+                            {lang === 'bn' ? 'শনাক্তকৃত মেয়াদ:' : 'Detected Expiry:'}{' '}
+                            {suggestion.analysis.expiry_date}
+                          </p>
+                        )}
+                        {suggestion.analysis.notes && (
+                          <p className="text-[11px] text-[var(--md-sys-color-on-surface-variant)] truncate">
+                            {suggestion.analysis.notes}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() =>
+                        onApplyAiSuggestion?.(
+                          doc.requirementId,
+                          suggestion.file.id,
+                          doc.has_expiry ? suggestion.analysis.expiry_date : undefined
+                        )
+                      }
+                      className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-[14px] bg-[var(--md-sys-color-primary-container)] text-[var(--md-sys-color-on-primary-container)] hover:opacity-90 font-bold text-xs transition-opacity cursor-pointer shrink-0 self-start sm:self-auto"
+                    >
+                      <SparkleIcon size={13} />
+                      <span>{t('btn_apply_suggestion', lang)}</span>
+                    </button>
+                  </div>
+                )}
             </div>
           );
         })}
